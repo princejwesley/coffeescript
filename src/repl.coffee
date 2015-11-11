@@ -4,14 +4,16 @@ vm = require 'vm'
 nodeREPL = require 'repl'
 CoffeeScript = require './coffee-script'
 {merge, updateSyntaxError} = require './helpers'
+{EOL} = require 'os'
+
+nodeLineListener = ->
+data = ''
 
 replDefaults =
   prompt: 'coffee> ',
   historyFile: path.join process.env.HOME, '.coffee_history' if process.env.HOME
   historyMaxInputSize: 10240
   eval: (input, context, filename, cb) ->
-    # XXX: multiline hack.
-    input = input.replace /\uFF00/g, '\n'
     # Node's REPL sends the input ending with a newline and then wrapped in
     # parens. Unwrap all that.
     input = input.replace /^\(([\s\S]*)\n\)$/m, '$1'
@@ -46,56 +48,15 @@ runInContext = (js, context, filename) ->
     vm.runInContext js, context, filename
 
 addMultilineHandler = (repl) ->
-  {rli, inputStream, outputStream} = repl
-  # Node 0.11.12 changed API, prompt is now _prompt.
-  origPrompt = repl._prompt ? repl.prompt
-
-  multiline =
-    enabled: off
-    initialPrompt: origPrompt.replace /^[^> ]*/, (x) -> x.replace /./g, '-'
-    prompt: origPrompt.replace /^[^> ]*>?/, (x) -> x.replace /./g, '.'
-    buffer: ''
-
+  {rli} = repl
   # Proxy node's line listener
   nodeLineListener = rli.listeners('line')[0]
   rli.removeListener 'line', nodeLineListener
   rli.on 'line', (cmd) ->
-    if multiline.enabled
-      multiline.buffer += "#{cmd}\n"
-      rli.setPrompt multiline.prompt
-      rli.prompt true
-    else
-      rli.setPrompt origPrompt
-      nodeLineListener cmd
+    data += "#{cmd}\n"
+    rli.prompt true
     return
 
-  # Handle Ctrl-v
-  inputStream.on 'keypress', (char, key) ->
-    return unless key and key.ctrl and not key.meta and not key.shift and key.name is 'v'
-    if multiline.enabled
-      # allow arbitrarily switching between modes any time before multiple lines are entered
-      unless multiline.buffer.match /\n/
-        multiline.enabled = not multiline.enabled
-        rli.setPrompt origPrompt
-        rli.prompt true
-        return
-      # no-op unless the current line is empty
-      return if rli.line? and not rli.line.match /^\s*$/
-      # eval, print, loop
-      multiline.enabled = not multiline.enabled
-      rli.line = ''
-      rli.cursor = 0
-      rli.output.cursorTo 0
-      rli.output.clearLine 1
-      # XXX: multiline hack
-      multiline.buffer = multiline.buffer.replace /\n/g, '\uFF00'
-      rli.emit 'line', multiline.buffer
-      multiline.buffer = ''
-    else
-      multiline.enabled = not multiline.enabled
-      rli.setPrompt multiline.initialPrompt
-      rli.prompt true
-    return
 
 # Store and load command history from a file
 addHistory = (repl, filename, maxSize) ->
@@ -154,6 +115,11 @@ module.exports =
     repl = nodeREPL.start opts
     runInContext opts.prelude, repl.context, 'prelude' if opts.prelude
     repl.on 'exit', -> repl.outputStream.write '\n' if not repl.rli.closed
+    repl.input.on 'data', (d) ->
+      if d is EOL
+        nodeLineListener(data)
+        data = ''
+
     addMultilineHandler repl
     addHistory repl, opts.historyFile, opts.historyMaxInputSize if opts.historyFile
     # Adapt help inherited from the node REPL
