@@ -122,6 +122,20 @@ module.exports =
 
     addMultilineHandler repl
     addHistory repl, opts.historyFile, opts.historyMaxInputSize if opts.historyFile
+    repl.transpile = (input, context, cb) ->
+      input = input.replace /^\(([\s\S]*)\n\)$/m, '$1'
+      try
+        tokens = CoffeeScript.tokens input
+        referencedVars = (
+          token[1] for token in tokens when token.variable
+        )
+        ast = CoffeeScript.nodes tokens
+        js = ast.compile {bare: yes, locals: Object.keys(context), referencedVars}
+        cb null, js.toString()
+      catch err
+        # AST's `compile` does not add source code information to syntax errors.
+        updateSyntaxError err, input
+        cb err
     # Adapt help inherited from the node REPL
     repl.commands[getCommandId(repl, 'load')].help = 'Load code from a file into this REPL session'
     repl
