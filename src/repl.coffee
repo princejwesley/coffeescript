@@ -11,8 +11,6 @@ promptData = ''
 
 replDefaults =
   prompt: 'coffee> ',
-  historyFile: path.join process.env.HOME, '.coffee_history' if process.env.HOME
-  historyMaxInputSize: 10240
   eval: (input, context, filename, cb) ->
     # Node's REPL sends the input ending with a newline and then wrapped in
     # parens. Unwrap all that.
