@@ -7,7 +7,7 @@ CoffeeScript = require './coffee-script'
 {EOL} = require 'os'
 
 nodeLineListener = ->
-data = ''
+promptData = ''
 
 replDefaults =
   prompt: 'coffee> ',
@@ -53,7 +53,7 @@ addMultilineHandler = (repl) ->
   nodeLineListener = rli.listeners('line')[0]
   rli.removeListener 'line', nodeLineListener
   rli.on 'line', (cmd) ->
-    data += "#{cmd}\n"
+    promptData += "#{cmd}\n"
     rli.prompt true
     return
 
@@ -117,8 +117,8 @@ module.exports =
     repl.on 'exit', -> repl.outputStream.write '\n' if not repl.rli.closed
     repl.input.on 'data', (d) ->
       if d is EOL
-        nodeLineListener(data)
-        data = ''
+        nodeLineListener(promptData)
+        promptData = ''
 
     addMultilineHandler repl
     addHistory repl, opts.historyFile, opts.historyMaxInputSize if opts.historyFile
@@ -137,5 +137,17 @@ module.exports =
         updateSyntaxError err, input
         cb err
     # Adapt help inherited from the node REPL
-    repl.commands[getCommandId(repl, 'load')].help = 'Load code from a file into this REPL session'
+    repl.commands[getCommandId(repl, 'load')].action = (file) ->
+      try
+        stats = fs.statSync(file)
+        if stats and stats.isFile()
+          data = fs.readFileSync(file, 'utf8')
+          repl.displayPrompt()
+          nodeLineListener(data)
+          promptData = ''
+        else
+          repl.outputStream.write "Failed to load:#{file} is not a valid file\n"
+      catch e
+        repl.outputStream.write "Failed to load:#{file}\n"
+      repl.displayPrompt()
     repl
